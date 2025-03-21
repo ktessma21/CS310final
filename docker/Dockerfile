@@ -18,4 +18,8 @@ RUN adduser -S user -G users -D
 RUN pip3 install cryptography
 RUN pip3 install pymysql
 RUN pip3 install boto3
+RUN pip3 install requests
+RUN pip3 install jsons
+
+
 

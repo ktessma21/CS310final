@@ -1,3 +1,49 @@
+# Client-side python app for SyncUp - testing purposes only. 
+# 
+# Authors:
+#   Kidus Chernet 
+#   Ana Ramirez
+#   (Extended for Spotify testing)
+
+# Use some code from: Professor Joseph Hummel. 
+#
+
+import requests
+import json
+import uuid
+import pathlib
+import logging
+import sys
+import os
+import base64
+import time
+import webbrowser
+from urllib.parse import urlparse, parse_qs
+
+from configparser import ConfigParser
+
+
+############################################################
+#
+# classes
+#
+class User:
+    def __init__(self, row):
+        self.userid = row[0]
+        self.username = row[1]
+        self.pwdhash = row[2]
+
+
+class Job:
+    def __init__(self, row):
+        self.jobid = row[0]
+        self.userid = row[1]
+        self.status = row[2]
+        self.originaldatafile = row[3]
+        self.datafilekey = row[4]
+        self.resultsfilekey = row[5]
+
+
 #
 # Client-side python app for SyncUp - testing purposes only. 
 # 
@@ -22,29 +68,26 @@ import time
 
 from configparser import ConfigParser
 
-
 ############################################################
 #
 # classes
 #
 class User:
 
-  def __init__(self, row):
+  def init(self, row):
     self.userid = row[0]
     self.username = row[1]
     self.pwdhash = row[2]
 
-
 class Job:
 
-  def __init__(self, row):
+  def init(self, row):
     self.jobid = row[0]
     self.userid = row[1]
     self.status = row[2]
     self.originaldatafile = row[3]
     self.datafilekey = row[4]
     self.resultsfilekey = row[5]
-
 
 ###################################################################
 #
@@ -62,11 +105,11 @@ def web_service_get(url):
   or 500, we consider this a valid response and return the response.
   Otherwise we try again, at most 3 times. After 3 attempts the 
   function returns with the last response.
-  
+
   Parameters
   ----------
   url: url for calling the web service
-  
+
   Returns
   -------
   response received from web service
@@ -74,10 +117,10 @@ def web_service_get(url):
 
   try:
     retries = 0
-    
+
     while True:
       response = requests.get(url)
-        
+
       if response.status_code in [200, 400, 480, 481, 482, 500]:
         #
         # we consider this a successful call and response
@@ -92,7 +135,7 @@ def web_service_get(url):
         # try at most 3 times
         time.sleep(retries)
         continue
-          
+
       #
       # if get here, we tried 3 times, we give up:
       #
@@ -101,12 +144,11 @@ def web_service_get(url):
     return response
 
   except Exception as e:
-    print("**ERROR**")
+    print("ERROR")
     logging.error("web_service_get() failed:")
     logging.error("url: " + url)
     logging.error(e)
     return None
-    
 
 ############################################################
 #
@@ -130,9 +172,7 @@ def prompt():
     print("   0 => end")
     print("   1 => register")
     print("   2 => login")
-    print("   3 => reset database")
-    print("   4 => upload pdf")
-    print("   5 => logout")
+    print("   3 => logout")
 
     cmd = input()
 
@@ -146,499 +186,501 @@ def prompt():
     return cmd
 
   except Exception as e:
-    print("**ERROR")
-    print("**ERROR: invalid input")
-    print("**ERROR")
+    print("ERROR")
+    print("ERROR: invalid input")
+    print("**ERROR**")
+    logging.error("prompt() failed:")
+    logging.error(e)
     return -1
+###################################################################
+#
+# web_service_get
+#
+# When calling servers on a network, calls can randomly fail. 
+# The better approach is to repeat at least N times (typically 
+# N=3), and then give up after N tries.
+#
+def web_service_get(url):
+    """
+    Submits a GET request to a web service at most 3 times, since 
+    web services can fail to respond e.g. to heavy user or internet 
+    traffic. If the web service responds with status code 200, 400 
+    or 500, we consider this a valid response and return the response.
+    Otherwise we try again, at most 3 times. After 3 attempts the 
+    function returns with the last response.
+    
+    Parameters
+    ----------
+    url: url for calling the web service
+    
+    Returns
+    -------
+    response received from web service
+    """
+
+    try:
+        retries = 0
+        
+        while True:
+            response = requests.get(url)
+                
+            if response.status_code in [200, 400, 480, 481, 482, 500]:
+                # we consider this a successful call and response
+                break
+
+            # failed, try again?
+            retries = retries + 1
+            if retries < 3:
+                # try at most 3 times
+                time.sleep(retries)
+                continue
+                    
+            # if get here, we tried 3 times, we give up:
+            break
+
+        return response
+
+    except Exception as e:
+        print("**ERROR**")
+        logging.error("web_service_get() failed:")
+        logging.error("url: " + url)
+        logging.error(e)
+        return None
 
 
 ############################################################
 #
-# users
+# check_url
 #
-def users(baseurl):
-  """
-  Prints out all the users in the database
+def check_url(baseurl):
+    """
+    Performs some checks on the given url, which is read from a config file.
+    Returns updated url if it needs to be modified.
 
-  Parameters
-  ----------
-  baseurl: baseurl for web service
+    Parameters
+    ----------
+    baseurl: url for a web service
 
-  Returns
-  -------
-  nothing
-  """
+    Returns
+    -------
+    same url or an updated version if it contains an error
+    """
 
-  try:
-    #
-    # call the web service:
-    #
-    api = '/users'
+    # make sure baseurl does not end with /, if so remove:
+    if len(baseurl) < 8:
+        print("**ERROR: baseurl '", baseurl, "' is not nearly long enough...")
+        return None
+
+    if not (baseurl.startswith("http://") or baseurl.startswith("https://")):
+        print("**ERROR: baseurl must start with http:// or https://")
+        return None
+
+    lastchar = baseurl[len(baseurl) - 1]
+    if lastchar == "/":
+        baseurl = baseurl[:-1]
+        
+    return baseurl
+
+
+############################################################
+#
+# init
+#
+def init():
+    """
+    Initialization function that sets up logging and reads config file
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    Tuple containing (baseurl, current_user)
+    where baseurl is the URL for the web service
+    and current_user is None (no user logged in)
+    """
+    
+    # configure logging:
+    logging.basicConfig(
+        filename='client.log',
+        level=logging.WARNING,
+        format='%(asctime)s-%(levelname)s-%(message)s',
+        datefmt='%Y-%m-%d-%H-%M-%S'
+    )
+
+    # logging.debug("debug message")
+    # logging.info("info message")
+    # logging.warning("warning message")
+    # logging.error("error message")
+    # logging.critical("critical message")
+
+    # get baseurl from config file:
+    configFile = 'syncUP-client.ini'
+    
+    if not pathlib.Path(configFile).is_file():
+        print("**ERROR: config file 'client.ini' does not exist, create and try again")
+        return (None, None)
+        
+    try:
+        configur = ConfigParser()
+        configur.read(configFile)
+    except Exception as e:
+        print("**ERROR: unable to read config file")
+        logging.error("init() failed:")
+        logging.error(e)
+        return (None, None)
+        
+    baseurl = configur.get('client', 'webservice')
+    
+    baseurl = check_url(baseurl)
+    if baseurl is None:
+        return (None, None)
+        
+    # initialize user to None, meaning no one is logged in
+    current_user = None
+    
+    return (baseurl, current_user)
+
+
+############################################################
+#
+# register
+#
+def register(baseurl):
+    """
+    Registers a new user 
+    
+    Parameters
+    ----------
+    baseurl: baseurl for web service
+    
+    Returns
+    -------
+    None
+    """
+    
+    print("Registering a new user...")
+    print()
+    
+    # get user input:
+    print("Enter firstname>")
+    firstname = input()
+    
+    print("Enter lastname (optional)>")
+    lastname = input()
+    
+    print("Enter username>")
+    username = input()
+    
+    print("Enter password>")
+    password = input()
+    
+    # build web service URL:
+    api = '/register'
+    url = baseurl + api
+    
+    # add query params:
+    data = {'firstname': firstname, 'username': username, 'password': password}
+    if lastname.strip() != "":
+        data['lastname'] = lastname
+
+    print("calling web service...")
+    response = requests.post(url, json=data)
+    
+    if response is None:
+        print("**ERROR: failed to call web service, no response")
+        return
+        
+    # analyze response:
+    if response.status_code != 200 and response.status_code != 302:
+        print("**ERROR: web service returned status code", response.status_code)
+        try:
+            jsonResponse = response.json()
+            print(json.dumps(jsonResponse, indent=2))
+        except:
+            print("Response:", response.text)
+        return
+    
+    try:
+        # The response could be a redirect or JSON
+        if response.status_code == 302:
+            # Handle redirect response
+            redirect_url = response.headers.get('Location')
+            print(response.text)
+            print(f"Received redirect to: {redirect_url}")
+            print("Opening browser for Spotify authorization...")
+            webbrowser.open(redirect_url)
+            print("\nAfter authorizing in the browser, the system will redirect to your callback URL.")
+            print("You'll need to manually check your server logs for the callback processing.")
+            return
+        else:
+            # Handle JSON response
+            jsonResponse = response.json()
+            print("Web service returned:")
+            print(json.dumps(jsonResponse, indent=2))
+            
+            # Check if response contains a Spotify auth URL to open
+            if "spotify_auth_url" in jsonResponse:
+                print("\nOpening browser for Spotify authorization...")
+                webbrowser.open(jsonResponse["spotify_auth_url"])
+                print("\nAfter authorizing in the browser, the system will redirect to your callback URL.")
+                print("Registration token:", jsonResponse.get("registration_token", "Not provided"))
+                
+                # Wait for manual confirmation from user
+                print("\nPress Enter after you've completed the Spotify authorization process...")
+                input()
+                
+            
+    except Exception as e:
+        print("**ERROR: unable to parse response as JSON")
+        print("Response:", response.text)
+        logging.error("register() failed:")
+        logging.error(e)
+        return
+
+
+############################################################
+#
+# login
+#
+def login(baseurl):
+    """
+    Prompts user to login by entering their username and 
+    password. If successful, a connection to the web server
+    is established.
+
+    Parameters
+    ----------
+    baseurl: baseurl for web service
+
+    Returns
+    -------
+    user object if successful, None if not
+    """
+
+    print("Login to your account...")
+    print()
+
+    # get user input:
+    print("Enter username>")
+    username = input()
+
+    print("Enter password>")
+    password = input()
+
+    # build web service URL:
+    api = '/login'
     url = baseurl + api
 
-    # res = requests.get(url)
-    res = web_service_get(url)
+    # add query params:
+    params = {'username': username, 'password': password}
+    url += '?' + '&'.join([f"{key}={requests.utils.quote(str(value))}" for key, value in params.items()])
 
-    #
-    # let's look at what we got back:
-    #
-    if res.status_code == 200: #success
-      pass
-    else:
-      # failed:
-      print("Failed with status code:", res.status_code)
-      print("url: " + url)
-      if res.status_code == 500:
-        # we'll have an error message
-        body = res.json()
-        print("Error message:", body)
-      #
-      return
+    # call web service:
+    print("Calling web service...")
+    response = web_service_get(url)
 
-    #
-    # deserialize and extract users:
-    #
-    body = res.json()
+    if response is None:
+        print("**ERROR: failed to call web service, no response")
+        return None
 
-    #
-    # let's map each row into a User object:
-    #
-    users = []
-    for row in body:
-      user = User(row)
-      users.append(user)
-    #
-    # Now we can think OOP:
-    #
-    if len(users) == 0:
-      print("no users...")
-      return
+    # analyze response:
+    if response.status_code != 200:
+        print("**ERROR: web service returned status code", response.status_code)
+        try:
+            jsonResponse = response.json()
+            print(json.dumps(jsonResponse, indent=2))
+        except:
+            print("Response:", response.text)
+        return None
 
-    for user in users:
-      print(user.userid)
-      print(" ", user.username)
-      print(" ", user.pwdhash)
-    #
-    return
+    try:
+        jsonResponse = response.json()
+    except Exception as e:
+        print("**ERROR: unable to parse response as JSON")
+        print("Response:", response.text)
+        logging.error("login() failed:")
+        logging.error(e)
+        return None
 
-  except Exception as e:
-    logging.error("**ERROR: users() failed:")
-    logging.error("url: " + url)
-    logging.error(e)
-    return
+    # display results:
+    if "userid" not in jsonResponse:
+        print("**ERROR: unexpected response, no userid returned")
+        print("Response:", jsonResponse)
+        return None
+
+    # create user object to return:
+    try:
+        user = User([jsonResponse["userid"], username, ""])
+    except Exception as e:
+        print("**ERROR: unable to create User object from response")
+        print("Response:", jsonResponse)
+        logging.error("login() failed:")
+        logging.error(e)
+        return None
+
+    print("Login successful, userid:", user.userid)
+    return user
 
 
 ############################################################
 #
-# jobs
+# logout
 #
-def jobs(baseurl):
-  """
-  Prints out all the jobs in the database
+def logout(current_user):
+    """
+    Logout => server-side this would be terminating the 
+    session, but in this case we just set the current_user
+    to None so no user is logged in.
 
-  Parameters
-  ----------
-  baseurl: baseurl for web service
+    Parameters
+    ----------
+    current_user: user object representing the current user
 
-  Returns
-  -------
-  nothing
-  """
+    Returns
+    -------
+    None to indicate no one is logged in
+    """
 
-  try:
+    if current_user is None:
+        print("No user is currently logged in...")
+        return None
+
     #
-    # call the web service:
+    # These would be additional actions to take if we
+    # were using sessions server-side, but we're not so
+    # we just return None so no one is logged in:
     #
-    api = '/jobs'
+    current_user = None
+    print("You have been logged out.")
+    return current_user
+
+
+############################################################
+#
+# test_callback
+#
+def test_callback(baseurl):
+    """
+    Manually test the callback by providing the code and state from 
+    the browser redirect URL
+    
+    Parameters
+    ----------
+    baseurl: baseurl for web service
+    
+    Returns
+    -------
+    None
+    """
+    
+    print("Test callback manually...")
+    print()
+    
+    print("Enter the authorization code from the browser redirect (code parameter)>")
+    code = input()
+    
+    print("Enter the state parameter from the browser redirect>")
+    state = input()
+    
+    # build web service URL:
+    api = '/callback'
     url = baseurl + api
-
-    # res = requests.get(url)
-    res = web_service_get(url)
-
-    #
-    # let's look at what we got back:
-    #
-    if res.status_code == 200: #success
-      pass
+    
+    # add query params:
+    params = {'code': code, 'state': state}
+    url += '?' + '&'.join([f"{key}={requests.utils.quote(str(value))}" for key, value in params.items()])
+    
+    # call web service:
+    print("Calling callback web service...")
+    response = web_service_get(url)
+    
+    if response is None:
+        print("**ERROR: failed to call web service, no response")
+        return
+        
+    # analyze response:
+    print(f"Response status code: {response.status_code}")
+    
+    if response.status_code == 302:
+        redirect_url = response.headers.get('Location')
+        print(f"Received redirect to: {redirect_url}")
+        
+        # Parse the redirect URL to show parameters
+        parsed_url = urlparse(redirect_url)
+        query_params = parse_qs(parsed_url.query)
+        print("\nRedirect parameters:")
+        for key, value in query_params.items():
+            print(f"  {key}: {value[0]}")
+            
+        print("\nOpening browser to see the final result...")
+        webbrowser.open(redirect_url)
     else:
-      # failed:
-      print("Failed with status code:", res.status_code)
-      print("url: " + url)
-      if res.status_code == 500:
-        # we'll have an error message
-        body = res.json()
-        print("Error message:", body)
-      #
-      return
-
-    #
-    # deserialize and extract jobs:
-    #
-    body = res.json()
-    #
-    # let's map each row into an Job object:
-    #
-    jobs = []
-    for row in body:
-      job = Job(row)
-      jobs.append(job)
-    #
-    # Now we can think OOP:
-    #
-    if len(jobs) == 0:
-      print("no jobs...")
-      return
-
-    for job in jobs:
-      print(job.jobid)
-      print(" ", job.userid)
-      print(" ", job.status)
-      print(" ", job.originaldatafile)
-      print(" ", job.datafilekey)
-      print(" ", job.resultsfilekey)
-    #
-    return
-
-  except Exception as e:
-    logging.error("**ERROR: jobs() failed:")
-    logging.error("url: " + url)
-    logging.error(e)
-    return
+        try:
+            jsonResponse = response.json()
+            print("Web service returned:")
+            print(json.dumps(jsonResponse, indent=2))
+        except:
+            print("Response text:", response.text)
 
 
 ############################################################
 #
-# reset
-#
-def reset(baseurl):
-  """
-  Resets the database back to initial state.
-
-  Parameters
-  ----------
-  baseurl: baseurl for web service
-
-  Returns
-  -------
-  nothing
-  """
-
-  try:
-    #
-    # call the web service:
-    #
-    api = '/reset'
-    url = baseurl + api
-
-    res = requests.delete(url)
-
-    #
-    # let's look at what we got back:
-    #
-    if res.status_code == 200: #success
-      pass
-    else:
-      # failed:
-      print("Failed with status code:", res.status_code)
-      print("url: " + url)
-      if res.status_code == 500:
-        # we'll have an error message
-        body = res.json()
-        print("Error message:", body)
-      #
-      return
-
-    #
-    # deserialize and print message
-    #
-    body = res.json()
-
-    msg = body
-
-    print(msg)
-    return
-
-  except Exception as e:
-    logging.error("**ERROR: reset() failed:")
-    logging.error("url: " + url)
-    logging.error(e)
-    return
-
-
-############################################################
-#
-# upload
-#
-def upload(baseurl):
-  """
-  Prompts the user for a local filename and user id, 
-  and uploads that asset (PDF) to S3 for processing. 
-
-  Parameters
-  ----------
-  baseurl: baseurl for web service
-
-  Returns
-  -------
-  nothing
-  """
-
-  try:
-    print("Enter PDF filename>")
-    local_filename = input()
-
-    if not pathlib.Path(local_filename).is_file():
-      print("PDF file '", local_filename, "' does not exist...")
-      return
-
-    print("Enter user id>")
-    userid = input()
-
-    #
-    # build the data packet. First step is read the PDF
-    # as raw bytes:
-    #
-    infile = open(local_filename, "rb")
-    bytes = infile.read()
-    infile.close()
-
-    #
-    # now encode the pdf as base64. Note b64encode returns
-    # a bytes object, not a string. So then we have to convert
-    # (decode) the bytes -> string, and then we can serialize
-    # the string as JSON for upload to server:
-    #
-    
-    datastr = ""
-    
-    # TODO: data = ???
-    # TODO: datastr = ???
-
-    data = {"filename": local_filename, "data": datastr}
-
-    #
-    # call the web service:
-    #
-    
-    res = None
-    
-    # TODO: ???
-
-    #
-    # let's look at what we got back:
-    #
-    if res.status_code == 200: #success
-      pass
-    elif res.status_code == 400: # no such user
-      body = res.json()
-      print(body)
-      return
-    else:
-      # failed:
-      print("Failed with status code:", res.status_code)
-      print("url: " + url)
-      if res.status_code == 500:
-        # we'll have an error message
-        body = res.json()
-        print("Error message:", body)
-      #
-      return
-
-    #
-    # success, extract jobid:
-    #
-    body = res.json()
-
-    jobid = body
-
-    print("PDF uploaded, job id =", jobid)
-    return
-
-  except Exception as e:
-    logging.error("**ERROR: upload() failed:")
-    logging.error("url: " + url)
-    logging.error(e)
-    return
-
-
-############################################################
-#
-# download
-#
-def download(baseurl):
-  """
-  Prompts the user for the job id, and downloads
-  that asset (PDF).
-
-  Parameters
-  ----------
-  baseurl: baseurl for web service
-
-  Returns
-  -------
-  nothing
-  """
-  
-  try:
-    print("Enter job id>")
-    jobid = input()
-    
-    #
-    # call the web service:
-    #
-
-    res = None
-    
-    # TODO ???
-
-    #
-    # let's look at what we got back:
-    #
-    if res.status_code == 200: #success
-      pass
-    elif res.status_code == 400: # no such job
-      body = res.json()
-      print(body)
-      return
-    elif res.status_code in [480, 481, 482]:  # uploaded
-      msg = res.json()
-      print("No results available yet...")
-      print("Job status:", msg)
-      return
-    else:
-      # failed:
-      print("Failed with status code:", res.status_code)
-      print("url: " + url)
-      if res.status_code == 500:
-        # we'll have an error message
-        body = res.json()
-        print("Error message:", body)
-      #
-      return
-      
-    #
-    # if we get here, status code was 200, so we
-    # have results to deserialize and display:
-    #
-    
-    body = ""
-    
-    # deserialize the message body:
-    # TODO: body = ???
-
-    datastr = body
-
-    #
-    # encode the data string to obtain the raw bytes in base64,
-    # then call b64decode to obtain the original raw bytes.
-    # Finally, decode() the bytes to obtain the results as a 
-    # printable string.
-    #
-    
-    results = ""
-    
-    # TODO: base64_bytes = ???
-    # TODO: bytes = ???
-    # TODO: results = ???
-
-    print(results)
-    return
-
-  except Exception as e:
-    logging.error("**ERROR: download() failed:")
-    logging.error("url: " + url)
-    logging.error(e)
-    return
-
-
-############################################################
 # main
 #
-try:
-  print('** Welcome to BenfordApp **')
-  print()
+print('** Welcome to SyncUp Testing Client **')
+print()
 
-  # eliminate traceback so we just get error message:
-  sys.tracebacklimit = 0
-
-  #
-  # what config file should we use for this session?
-  #
-  config_file = 'benfordapp-client-config.ini'
-
-  print("Config file to use for this session?")
-  print("Press ENTER to use default, or")
-  print("enter config file name>")
-  s = input()
-
-  if s == "":  # use default
-    pass  # already set
-  else:
-    config_file = s
-
-  #
-  # does config file exist?
-  #
-  if not pathlib.Path(config_file).is_file():
-    print("**ERROR: config file '", config_file, "' does not exist, exiting")
+# initialize:
+baseurl, current_user = init()
+if baseurl is None:
+    print("**ERROR: Failed to initialize, exiting")
     sys.exit(0)
 
-  #
-  # setup base URL to web service:
-  #
-  configur = ConfigParser()
-  configur.read(config_file)
-  baseurl = configur.get('client', 'webservice')
+print("Web service URL:", baseurl)
+print()
 
-  #
-  # make sure baseurl does not end with /, if so remove:
-  #
-  if len(baseurl) < 16:
-    print("**ERROR: baseurl '", baseurl, "' is not nearly long enough...")
-    sys.exit(0)
+# main loop:
+cmd = prompt()
 
-  if baseurl == "https://YOUR_GATEWAY_API.amazonaws.com":
-    print("**ERROR: update config file with your gateway endpoint")
-    sys.exit(0)
-
-  if baseurl.startswith("http:"):
-    print("**ERROR: your URL starts with 'http', it should start with 'https'")
-    sys.exit(0)
-
-  lastchar = baseurl[len(baseurl) - 1]
-  if lastchar == "/":
-    baseurl = baseurl[:-1]
-
-  #
-  # main processing loop:
-  #
-  cmd = prompt()
-
-  while cmd != 0:
+while cmd != 0:
+    #
+    # register
     #
     if cmd == 1:
-      users(baseurl)
-    elif cmd == 2:
-      jobs(baseurl)
-    elif cmd == 3:
-      reset(baseurl)
-    elif cmd == 4:
-      upload(baseurl)
-    elif cmd == 5:
-      download(baseurl)
-    else:
-      print("** Unknown command, try again...")
+        register(baseurl)
     #
-    cmd = prompt()
+    # login
+    #
+    elif cmd == 2:
+        user = login(baseurl)
+        if user is not None:  # success
+            current_user = user
+    #
+    # logout
+    #
+    elif cmd == 3:
+        current_user = logout(current_user)
+    #
+    # test callback manually
+    #
+    elif cmd == 4:
+        test_callback(baseurl)
+    #
+    # unknown command
+    #
+    else:
+        print("** Unknown command, try again...")
+    
+    # prompt for next command:
+    if current_user is None:
+        cmd = prompt()
+    else:
+        print()
+        print(">> You are logged in as", current_user.username)
+        cmd = prompt()
 
-  #
-  # done
-  #
-  print()
-  print('** done **')
-  sys.exit(0)
-
-except Exception as e:
-  logging.error("**ERROR: main() failed:")
-  logging.error(e)
-  sys.exit(0)
+# done
+print()
+print('** Done **')
