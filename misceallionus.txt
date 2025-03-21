@@ -1,0 +1,9 @@
+SELECT p.post_id, p.user_id, p.message, p.timestamp,
+       CASE WHEN p.user_id IN (SELECT friend_id FROM friends WHERE user_id = :user_id) 
+            THEN 1 ELSE 2 END AS priority
+FROM posts p
+ORDER BY priority, p.timestamp DESC
+LIMIT :limit OFFSET :offset;
+
+fetching feeds based on priority
+

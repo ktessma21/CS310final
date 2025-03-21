@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SyncUp Registration</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        .card {
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            padding: 20px;
+            margin: 20px 0;
+        }
+        .success {
+            border-left: 4px solid #2ecc71;
+        }
+        .error {
+            border-left: 4px solid #e74c3c;
+        }
+        h1 {
+            color: #333;
+        }
+        .hidden {
+            display: none;
+        }
+        .username {
+            font-weight: bold;
+            color: #3498db;
+        }
+    </style>
+</head>
+<body>
+    <h1>SyncUp</h1>
+    
+    <div id="loading" class="card">
+        <p>Processing your registration...</p>
+    </div>
+    
+    <div id="success" class="card success hidden">
+        <h2>Registration Successful!</h2>
+        <p>Welcome to SyncUp, <span id="username">user</span>!</p>
+        <p>Your account has been successfully created and linked with Spotify.</p>
+        <p>You can now close this window and use the application.</p>
+    </div>
+    
+    <div id="error" class="card error hidden">
+        <h2>Registration Failed</h2>
+        <p>We encountered a problem with your registration:</p>
+        <p id="errorMessage"></p>
+        <p>Please try again or contact support if the problem persists.</p>
+    </div>
+    
+    <script>
+        // Parse URL parameters
+        const urlParams = new URLSearchParams(window.location.search);
+        const registrationStatus = urlParams.get('registration');
+        const error = urlParams.get('error');
+        const username = urlParams.get('username');
+        
+        // Hide loading indicator and show appropriate message
+        window.onload = function() {
+            document.getElementById('loading').classList.add('hidden');
+            
+            if (registrationStatus === 'success') {
+                document.getElementById('success').classList.remove('hidden');
+                if (username) {
+                    document.getElementById('username').textContent = username;
+                }
+            } else if (error) {
+                document.getElementById('error').classList.remove('hidden');
+                document.getElementById('errorMessage').textContent = decodeURIComponent(error);
+            }
+        }
+    </script>
+</body>
+</html>
