@@ -1,154 +1,89 @@
-# Client-side python app for SyncUp - testing purposes only. 
-# 
+#
+# Client-side python app for Social Media App, which is calling
+# a set of lambda functions in AWS through API Gateway.
+# The overall purpose of the app is to manage a simple social network
+# where users can follow each other and view followers.
+#
 # Authors:
-#   Kidus Chernet 
-#   Ana Ramirez
-#   (Extended for Spotify testing)
-
-# Use some code from: Professor Joseph Hummel. 
+#  Ana Ramirez
 #
 
 import requests
 import json
-import uuid
 import pathlib
 import logging
 import sys
 import os
-import base64
 import time
-import webbrowser
-from urllib.parse import urlparse, parse_qs
+import getpass
 
 from configparser import ConfigParser
 
 
 ############################################################
 #
-# classes
+# Classes
 #
 class User:
-    def __init__(self, row):
-        self.userid = row[0]
-        self.username = row[1]
-        self.pwdhash = row[2]
-
-
-class Job:
-    def __init__(self, row):
-        self.jobid = row[0]
-        self.userid = row[1]
-        self.status = row[2]
-        self.originaldatafile = row[3]
-        self.datafilekey = row[4]
-        self.resultsfilekey = row[5]
-
-
-#
-# Client-side python app for SyncUp - testing purposes only. 
-# 
-#
-# Authors:
-#   Kidus Chernet 
-#   Ana Ramirez
-
-# Use some code from: Professor Joseph Hummel. 
-#
-
-import requests
-import jsons
-
-import uuid
-import pathlib
-import logging
-import sys
-import os
-import base64
-import time
-
-from configparser import ConfigParser
-
-############################################################
-#
-# classes
-#
-class User:
-
-  def init(self, row):
+  def __init__(self, row):
     self.userid = row[0]
     self.username = row[1]
-    self.pwdhash = row[2]
 
-class Job:
+class Follower:
+  def __init__(self, data):
+    self.userid = data['userid']
+    self.username = data['username']
 
-  def init(self, row):
-    self.jobid = row[0]
-    self.userid = row[1]
-    self.status = row[2]
-    self.originaldatafile = row[3]
-    self.datafilekey = row[4]
-    self.resultsfilekey = row[5]
 
 ###################################################################
 #
 # web_service_get
 #
-# When calling servers on a network, calls can randomly fail. 
-# The better approach is to repeat at least N times (typically 
-# N=3), and then give up after N tries.
-#
-def web_service_get(url):
+def web_service_get(url, headers=None):
   """
-  Submits a GET request to a web service at most 3 times, since 
-  web services can fail to respond e.g. to heavy user or internet 
-  traffic. If the web service responds with status code 200, 400 
-  or 500, we consider this a valid response and return the response.
-  Otherwise we try again, at most 3 times. After 3 attempts the 
-  function returns with the last response.
-
+  Submits a GET request to a web service with retries
+  
   Parameters
   ----------
   url: url for calling the web service
-
+  headers: optional headers to include
+  
   Returns
   -------
   response received from web service
   """
-
   try:
     retries = 0
-
+    
     while True:
-      response = requests.get(url)
-
-      if response.status_code in [200, 400, 480, 481, 482, 500]:
-        #
+      if headers:
+        response = requests.get(url, headers=headers)
+      else:
+        response = requests.get(url)
+        
+      if response.status_code in [200, 400, 401, 404, 409, 500]:
         # we consider this a successful call and response
-        #
-        break;
+        break
 
-      #
       # failed, try again?
-      #
       retries = retries + 1
       if retries < 3:
         # try at most 3 times
         time.sleep(retries)
         continue
-
-      #
+          
       # if get here, we tried 3 times, we give up:
-      #
       break
 
     return response
 
   except Exception as e:
-    print("ERROR")
+    print("**ERROR**")
     logging.error("web_service_get() failed:")
     logging.error("url: " + url)
     logging.error(e)
     return None
+    
 
 ############################################################
 #
@@ -157,22 +92,16 @@ def web_service_get(url):
 def prompt():
   """
   Prompts the user and returns the command number
-
-  Parameters
-  ----------
-  None
-
-  Returns
-  -------
-  Command number entered by user (0, 1, 2, ...)
   """
   try:
     print()
     print(">> Enter a command:")
     print("   0 => end")
-    print("   1 => register")
+    print("   1 => users")
     print("   2 => login")
-    print("   3 => logout")
+    print("   3 => show followers")
+    print("   4 => follow user")
+    print("   5 => logout")
 
     cmd = input()
 
@@ -186,170 +115,141 @@ def prompt():
     return cmd
 
   except Exception as e:
-    print("ERROR")
-    print("ERROR: invalid input")
-    print("**ERROR**")
-    logging.error("prompt() failed:")
-    logging.error(e)
+    print("**ERROR")
+    print("**ERROR: invalid input")
+    print("**ERROR")
     return -1
-###################################################################
-#
-# web_service_get
-#
-# When calling servers on a network, calls can randomly fail. 
-# The better approach is to repeat at least N times (typically 
-# N=3), and then give up after N tries.
-#
-def web_service_get(url):
-    """
-    Submits a GET request to a web service at most 3 times, since 
-    web services can fail to respond e.g. to heavy user or internet 
-    traffic. If the web service responds with status code 200, 400 
-    or 500, we consider this a valid response and return the response.
-    Otherwise we try again, at most 3 times. After 3 attempts the 
-    function returns with the last response.
-    
-    Parameters
-    ----------
-    url: url for calling the web service
-    
-    Returns
-    -------
-    response received from web service
-    """
-
-    try:
-        retries = 0
-        
-        while True:
-            response = requests.get(url)
-                
-            if response.status_code in [200, 400, 480, 481, 482, 500]:
-                # we consider this a successful call and response
-                break
-
-            # failed, try again?
-            retries = retries + 1
-            if retries < 3:
-                # try at most 3 times
-                time.sleep(retries)
-                continue
-                    
-            # if get here, we tried 3 times, we give up:
-            break
-
-        return response
-
-    except Exception as e:
-        print("**ERROR**")
-        logging.error("web_service_get() failed:")
-        logging.error("url: " + url)
-        logging.error(e)
-        return None
 
 
 ############################################################
 #
-# check_url
+# users
 #
-def check_url(baseurl):
-    """
-    Performs some checks on the given url, which is read from a config file.
-    Returns updated url if it needs to be modified.
+def users(baseurl):
+  """
+  Prints out all the users in the database
+  """
+  try:
+    # call the web service:
+    api = '/users'
+    url = baseurl + api
 
-    Parameters
-    ----------
-    baseurl: url for a web service
+    res = web_service_get(url)
 
-    Returns
-    -------
-    same url or an updated version if it contains an error
-    """
+    # let's look at what we got back:
+    if res.status_code == 200: # success
+      pass
+    else:
+      # failed:
+      print("Failed with status code:", res.status_code)
+      print("url: " + url)
+      if res.status_code == 500:
+        # we'll have an error message
+        body = res.json()
+        print("Error message:", body)
+      return
 
-    # make sure baseurl does not end with /, if so remove:
-    if len(baseurl) < 8:
-        print("**ERROR: baseurl '", baseurl, "' is not nearly long enough...")
-        return None
+    # deserialize and extract users:
+    body = res.json()
 
-    if not (baseurl.startswith("http://") or baseurl.startswith("https://")):
-        print("**ERROR: baseurl must start with http:// or https://")
-        return None
+    # map each row into a User object:
+    users = []
+    for row in body:
+      user = User(row)
+      users.append(user)
+    
+    if len(users) == 0:
+      print("No users found...")
+      return
 
-    lastchar = baseurl[len(baseurl) - 1]
-    if lastchar == "/":
-        baseurl = baseurl[:-1]
-        
-    return baseurl
+    print("\nUsers:")
+    print("-" * 30)
+    for user in users:
+      print(f"User ID: {user.userid}")
+      print(f"Username: {user.username}")
+      print("-" * 30)
+    
+    return
+
+  except Exception as e:
+    logging.error("**ERROR: users() failed:")
+    logging.error("url: " + url)
+    logging.error(e)
+    return
 
 
 ############################################################
 #
-# init
+# show_followers
 #
-def init():
-    """
-    Initialization function that sets up logging and reads config file
-
-    Parameters
-    ----------
-    None
-
-    Returns
-    -------
-    Tuple containing (baseurl, current_user)
-    where baseurl is the URL for the web service
-    and current_user is None (no user logged in)
-    """
+def show_followers(baseurl, token):
+  """
+  Shows followers for the current authenticated user
+  """
+  try:
+    if not token:
+      print("No current token, please log in")
+      return
+      
+    print("Retrieving your followers...")
     
-    # configure logging:
-    logging.basicConfig(
-        filename='client.log',
-        level=logging.WARNING,
-        format='%(asctime)s-%(levelname)s-%(message)s',
-        datefmt='%Y-%m-%d-%H-%M-%S'
-    )
+    # Call the web service - we don't need to send a user ID
+    # since the server will get it from the token
+    api = '/followers'
+    url = baseurl + api
+    
+    headers = {"Authentication": token}
+    
+    res = web_service_get(url, headers)
+    
+    # Process response
+    if res.status_code == 200:  # success
+      body = res.json()
+      followers = body['followers']
+      count = body['follower_count']
+      
+      print(f"\nYour Followers ({count}):")
+      print("-" * 30)
+      
+      if count == 0:
+        print("You don't have any followers yet.")
+      else:
+        for follower in followers:
+          print(f"User ID: {follower['userid']}")
+          print(f"Username: {follower['username']}")
+          print("-" * 30)
+          
+    elif res.status_code == 401:
+      print("Authentication failed. Please log in again.")
+    else:
+      # failed
+      print(f"Failed with status code: {res.status_code}")
+      print(f"URL: {url}")
+      
+      if res.status_code in [400, 500]:
+        # we'll have an error message
+        body = res.json()
+        print(f"Error message: {body}")
+      
+    return
 
-    # logging.debug("debug message")
-    # logging.info("info message")
-    # logging.warning("warning message")
-    # logging.error("error message")
-    # logging.critical("critical message")
+  except Exception as e:
+    logging.error("**ERROR: show_followers() failed:")
+    logging.error(f"url: {url}")
+    logging.error(e)
+    return
 
-    # get baseurl from config file:
-    configFile = 'syncUP-client.ini'
-    
-    if not pathlib.Path(configFile).is_file():
-        print("**ERROR: config file 'client.ini' does not exist, create and try again")
-        return (None, None)
-        
-    try:
-        configur = ConfigParser()
-        configur.read(configFile)
-    except Exception as e:
-        print("**ERROR: unable to read config file")
-        logging.error("init() failed:")
-        logging.error(e)
-        return (None, None)
-        
-    baseurl = configur.get('client', 'webservice')
-    
-    baseurl = check_url(baseurl)
-    if baseurl is None:
-        return (None, None)
-        
-    # initialize user to None, meaning no one is logged in
-    current_user = None
-    
-    return (baseurl, current_user)
+  except Exception as e:
+    logging.error("**ERROR: show_followers() failed:")
+    logging.error(f"url: {url}")
+    logging.error(e)
+    return
 
 
 ############################################################
 #
-# register 
+# register
 #
-
-## 
-
 def register(baseurl):
     """
     Registers a new user 
@@ -376,11 +276,17 @@ def register(baseurl):
     print("Enter username>")
     username = input()
     
-    print("Enter password>")
-    password = input()
+    if not username.strip():
+      print("Username cannot be empty.")
+      return
     
-    # build web service URL:
-    api = '/register'
+    # Prepare data for request
+    data = {
+      "username": username
+    }
+    
+    # Call the web service
+    api = '/unfollow'
     url = baseurl + api
     
     # add query params:
@@ -389,12 +295,7 @@ def register(baseurl):
         data['lastname'] = lastname
 
     print("calling web service...")
-    try:
-        response = requests.post(url, json=data)
-    except Exception as e:
-        print(f"**ERROR: Exception during web service call: {str(e)}")
-        logging.error(f"register() request failed: {str(e)}")
-        return None
+    response = requests.post(url, json=data)
     
     if response is None:
         print("**ERROR: failed to call web service, no response")
@@ -406,362 +307,232 @@ def register(baseurl):
         try:
             jsonResponse = response.json()
             print(json.dumps(jsonResponse, indent=2))
-        except Exception as e:
-            print(f"Response (not JSON): {response.text}")
-            logging.error(f"Failed to parse error response as JSON: {str(e)}")
+        except:
+            print("Response:", response.text)
         return
     
     try:
-        # Check content type to determine how to handle response
-        content_type = response.headers.get('Content-Type', '')
-        
-        # The response could be a redirect, JSON, or HTML
+        # The response could be a redirect or JSON
         if response.status_code == 302:
             # Handle redirect response
-            print(f"Response status code: {response.status_code}")
             redirect_url = response.headers.get('Location')
-
+            print(response.text)
             print(f"Received redirect to: {redirect_url}")
             print("Opening browser for Spotify authorization...")
-            print(f"URL being opened: {redirect_url}")
-            try:
-                # Try to open browser with more detailed error reporting
-                browser_opened = webbrowser.open(redirect_url)
-                if browser_opened:
-                    print("Browser successfully opened")
-                else:
-                    print("WARNING: webbrowser.open() returned False - browser may not have opened")
-                    print("Please manually copy and paste this URL into your browser:")
-                    print(redirect_url)
-            except Exception as e:
-                print(f"ERROR opening browser: {str(e)}")
-                print("Please manually copy and paste this URL into your browser:")
-                print(redirect_url)
+            webbrowser.open(redirect_url)
             print("\nAfter authorizing in the browser, the system will redirect to your callback URL.")
             print("You'll need to manually check your server logs for the callback processing.")
             return
-        elif 'text/html' in content_type:
-            # Handle HTML response (likely a Spotify auth page)
-            print("Received HTML response (likely a Spotify login page)")
-            
-            # Look for Spotify auth URL in the HTML
-            html_content = response.text
-            # Extract potential URLs from the page (simple approach)
-            if 'accounts.scdn.co' in html_content or 'accounts.spotify.com' in html_content:
-                print("Detected Spotify authentication page")
-                print("Opening browser for direct authentication...")
-                print(f"URL being opened: {response.url}")
-                try:
-                    # Try to open browser with more detailed error reporting
-                    browser_opened = webbrowser.open(response.url)
-                    if browser_opened:
-                        print("Browser successfully opened")
-                    else:
-                        print("WARNING: webbrowser.open() returned False - browser may not have opened")
-                        print("Please manually copy and paste this URL into your browser:")
-                        print(response.url)
-                except Exception as e:
-                    print(f"ERROR opening browser: {str(e)}")
-                    print("Please manually copy and paste this URL into your browser:")
-                    print(response.url)
-                print("\nAfter authorizing in the browser, the system will redirect to your callback URL.")
-                print("\nPress Enter after you've completed the Spotify authorization process...")
-                input()
-                return
-            else:
-                print("Received HTML response that doesn't appear to be a Spotify login page")
-                print("First 500 characters of response:")
-                print(html_content[:500] + "...")
-                return
-        elif 'application/json' in content_type:
+        else:
             # Handle JSON response
             jsonResponse = response.json()
-            print("Web service returned JSON:")
+            print("Web service returned:")
             print(json.dumps(jsonResponse, indent=2))
             
             # Check if response contains a Spotify auth URL to open
             if "spotify_auth_url" in jsonResponse:
                 print("\nOpening browser for Spotify authorization...")
-                auth_url = jsonResponse["spotify_auth_url"]
-                print(f"URL being opened: {auth_url}")
-                try:
-                    # Try to open browser with more detailed error reporting
-                    browser_opened = webbrowser.open(auth_url)
-                    if browser_opened:
-                        print("Browser successfully opened")
-                    else:
-                        print("WARNING: webbrowser.open() returned False - browser may not have opened")
-                        print("Please manually copy and paste this URL into your browser:")
-                        print(auth_url)
-                except Exception as e:
-                    print(f"ERROR opening browser: {str(e)}")
-                    print("Please manually copy and paste this URL into your browser:")
-                    print(auth_url)
+                webbrowser.open(jsonResponse["spotify_auth_url"])
                 print("\nAfter authorizing in the browser, the system will redirect to your callback URL.")
                 print("Registration token:", jsonResponse.get("registration_token", "Not provided"))
                 
                 # Wait for manual confirmation from user
                 print("\nPress Enter after you've completed the Spotify authorization process...")
                 input()
-        else:
-            # Try to parse as JSON first, fall back to treating as text
-            try:
-                jsonResponse = response.json()
-                print("Web service returned:")
-                print(json.dumps(jsonResponse, indent=2))
-            except ValueError:
-                print("Response was not JSON. Response content:")
-                print(response.text[:1000] + "..." if len(response.text) > 1000 else response.text)
                 
+            
     except Exception as e:
-        print("**ERROR: unable to process response")
-        print("Response type:", response.headers.get('Content-Type', 'unknown'))
-        print("Response status:", response.status_code)
-        print("First 1000 characters of response:", response.text[:1000] + "..." if len(response.text) > 1000 else response.text)
-        logging.error(f"register() failed to process response: {str(e)}")
+        print("**ERROR: unable to parse response as JSON")
+        print("Response:", response.text)
+        logging.error("register() failed:")
+        logging.error(e)
         return
 
 ############################################################
 #
 # login
 #
-def login(baseurl):
-    """
-    Prompts user to login by entering their username and 
-    password. If successful, a connection to the web server
-    is established.
-
-    Parameters
-    ----------
-    baseurl: baseurl for web service
-
-    Returns
-    -------
-    user object if successful, None if not
-    """
-
-    print("Login to your account...")
-    print()
-
-    # get user input:
-    print("Enter username>")
-    username = input()
-
-    print("Enter password>")
-    password = input()
-
-    # build web service URL:
-    api = '/login'
-    url = baseurl + api
-
-    # add query params:
-    params = {'username': username, 'password': password}
-    url += '?' + '&'.join([f"{key}={requests.utils.quote(str(value))}" for key, value in params.items()])
-
-    # call web service:
-    print("Calling web service...")
-    response = web_service_get(url)
-
-    if response is None:
-        print("**ERROR: failed to call web service, no response")
-        return None
-
-    # analyze response:
-    if response.status_code != 200:
-        print("**ERROR: web service returned status code", response.status_code)
-        try:
-            jsonResponse = response.json()
-            print(json.dumps(jsonResponse, indent=2))
-        except:
-            print("Response:", response.text)
-        return None
-
-    try:
-        jsonResponse = response.json()
-    except Exception as e:
-        print("**ERROR: unable to parse response as JSON")
-        print("Response:", response.text)
-        logging.error("login() failed:")
-        logging.error(e)
-        return None
-
-    # display results:
-    if "userid" not in jsonResponse:
-        print("**ERROR: unexpected response, no userid returned")
-        print("Response:", jsonResponse)
-        return None
-
-    # create user object to return:
-    try:
-        user = User([jsonResponse["userid"], username, ""])
-    except Exception as e:
-        print("**ERROR: unable to create User object from response")
-        print("Response:", jsonResponse)
-        logging.error("login() failed:")
-        logging.error(e)
-        return None
-
-    print("Login successful, userid:", user.userid)
-    return user
-
-
-############################################################
-#
-# logout
-#
-def logout(current_user):
-    """
-    Logout => server-side this would be terminating the 
-    session, but in this case we just set the current_user
-    to None so no user is logged in.
-
-    Parameters
-    ----------
-    current_user: user object representing the current user
-
-    Returns
-    -------
-    None to indicate no one is logged in
-    """
-
-    if current_user is None:
-        print("No user is currently logged in...")
-        return None
-
-    #
-    # These would be additional actions to take if we
-    # were using sessions server-side, but we're not so
-    # we just return None so no one is logged in:
-    #
-    current_user = None
-    print("You have been logged out.")
-    return current_user
-
-
-############################################################
-#
-# test_callback
-#
-def test_callback(baseurl):
-    """
-    Manually test the callback by providing the code and state from 
-    the browser redirect URL
     
-    Parameters
-    ----------
-    baseurl: baseurl for web service
-    
-    Returns
-    -------
-    None
-    """
-    
-    print("Test callback manually...")
-    print()
-    
-    print("Enter the authorization code from the browser redirect (code parameter)>")
-    code = input()
-    
-    print("Enter the state parameter from the browser redirect>")
-    state = input()
-    
-    # build web service URL:
-    api = '/callback'
-    url = baseurl + api
-    
-    # add query params:
-    params = {'code': code, 'state': state}
-    url += '?' + '&'.join([f"{key}={requests.utils.quote(str(value))}" for key, value in params.items()])
-    
-    # call web service:
-    print("Calling callback web service...")
-    response = web_service_get(url)
-    
-    if response is None:
-        print("**ERROR: failed to call web service, no response")
-        return
-        
-    # analyze response:
-    print(f"Response status code: {response.status_code}")
-    
-    if response.status_code == 302:
-        redirect_url = response.headers.get('Location')
-        print(f"Received redirect to: {redirect_url}")
-        
-        # Parse the redirect URL to show parameters
-        parsed_url = urlparse(redirect_url)
-        query_params = parse_qs(parsed_url.query)
-        print("\nRedirect parameters:")
-        for key, value in query_params.items():
-            print(f"  {key}: {value[0]}")
-            
-        print("\nOpening browser to see the final result...")
-        webbrowser.open(redirect_url)
+
+def login(auth_url):
+  """
+  Prompts the user for a username and password, then tries
+  to log them in. If successful, returns the token returned
+  by the authentication service.
+  """
+  try:
+    username = input("username: ")
+    password = getpass.getpass()
+    duration = input("# of minutes before expiration? [ENTER for default] ")
+
+    # build message:
+    if duration == "":  # use default
+      data = {"username": username, "password": password}
     else:
-        try:
-            jsonResponse = response.json()
-            print("Web service returned:")
-            print(json.dumps(jsonResponse, indent=2))
-        except:
-            print("Response text:", response.text)
+      data = {"username": username, "password": password, "duration": duration}
+
+    # call the auth web service:
+    api = '/auth'
+    url = auth_url + api
+
+    res = requests.post(url, json=data)
+
+    # clear password variable:
+    password = None
+
+    # process the response:
+    if res.status_code == 401:
+      # authentication failed:
+      body = res.json()
+      print(body)
+      return None
+
+    if res.status_code == 200: # success
+      pass
+    elif res.status_code in [400, 500]:
+      # we'll have an error message
+      body = res.json()
+      print("**Error:", body)
+      return None
+    else:
+      # failed:
+      print("**ERROR: Failed with status code:", res.status_code)
+      print("url: " + url)
+      return None
+
+    # success, extract token:
+    body = res.json()
+    token = body
+    print("Logged in successfully, token:", token)
+    return token
+
+  except Exception as e:
+    logging.error("**ERROR: login() failed:")
+    logging.error("url: " + url)
+    logging.error(e)
+    return None
 
 
 ############################################################
 #
-# main
+# check_url
 #
-print('** Welcome to SyncUp Testing Client **')
-print()
-
-# initialize:
-baseurl, current_user = init()
-if baseurl is None:
-    print("**ERROR: Failed to initialize, exiting")
+def check_url(baseurl):
+  """
+  Validates and formats the URL from config
+  """
+  if len(baseurl) < 16:
+    print("**ERROR: baseurl '", baseurl, "' is not nearly long enough...")
     sys.exit(0)
 
-print("Web service URL:", baseurl)
-print()
+  if baseurl == "https://YOUR_GATEWAY_API.amazonaws.com":
+    print("**ERROR: update config file with your gateway endpoint")
+    sys.exit(0)
 
-# main loop:
-cmd = prompt()
+  if baseurl.startswith("http:"):
+    print("**ERROR: your URL starts with 'http', it should start with 'https'")
+    sys.exit(0)
 
-while cmd != 0:
-    #
-    # register
-    #
-    if cmd == 1:
-        register(baseurl)
-    #
-    # login
-    #
-    elif cmd == 2:
-        user = login(baseurl)
-        if user is not None:  # success
-            current_user = user
-    #
-    # logout
-    #
-    elif cmd == 3:
-        current_user = logout(current_user)
-    #
-    # test callback manually
-    #
-    elif cmd == 4:
-        test_callback(baseurl)
-    #
-    # unknown command
-    #
-    else:
-        print("** Unknown command, try again...")
+  lastchar = baseurl[len(baseurl) - 1]
+  if lastchar == "/":
+    baseurl = baseurl[:-1]
     
-    # prompt for next command:
-    if current_user is None:
-        cmd = prompt()
-    else:
-        print()
-        print(">> You are logged in as", current_user.username)
-        cmd = prompt()
+  return baseurl
 
-# done
-print()
-print('** Done **')
+
+############################################################
+# main
+#
+try:
+  print('** Welcome to Social Media App **')
+  print()
+
+
+
+  #
+  # we have two config files:
+  # 
+  #    1. socialapp API endpoint
+  #    2. authentication service API endpoint
+  #
+  #
+  socialapp_config_file = 'syncUP-client.ini'
+  authsvc_config_file = 'auth-config.ini'
+
+  print("First, enter name of SocialApp config file to use...")
+  print("Press ENTER to use default, or")
+  print("enter config file name>")
+  s = input()
+
+  if s == "":  # use default
+    pass  # already set
+  else:
+    socialapp_config_file = s
+
+  # does config file exist?
+  if not pathlib.Path(socialapp_config_file).is_file():
+    print("**ERROR: socialapp config file '", socialapp_config_file, "' does not exist, exiting")
+    sys.exit(0)
+
+  # setup base URL to web service:
+  configur = ConfigParser()
+  configur.read(socialapp_config_file)
+  baseurl = configur.get('client', 'webservice')
+  
+  baseurl = check_url(baseurl)
+  
+  # now we need to process the 2nd config file:
+  print("Second, enter name of Auth Service config file to use...")
+  print("Press ENTER to use default, or")
+  print("enter config file name>")
+  s = input()
+
+  if s == "":  # use default
+    pass  # already set
+  else:
+    authsvc_config_file = s
+
+  # does config file exist?
+  if not pathlib.Path(authsvc_config_file).is_file():
+    print("**ERROR: authsvc config file '", authsvc_config_file, "' does not exist, exiting")
+    sys.exit(0)
+
+  # setup base URL to auth service:
+  configur.read(authsvc_config_file)
+  auth_url = configur.get('client', 'webservice')
+  
+  auth_url = check_url(auth_url)
+
+  # initialize login token:
+  token = None
+
+  # main processing loop:
+  cmd = prompt()
+
+  while cmd != 0:
+    if cmd == 1:
+      users(baseurl)
+    elif cmd == 2:
+      token = login(auth_url)
+    elif cmd == 3:
+      show_followers(baseurl, token)
+    elif cmd == 4:
+      follow_user(baseurl, token)
+    elif cmd == 5:
+      # logout
+      token = None
+      print("Logged out successfully")
+    else:
+      print("** Unknown command, try again...")
+    
+    cmd = prompt()
+
+  # done
+  print()
+  print('** done **')
+  sys.exit(0)
+
+except Exception as e:
+  logging.error("**ERROR: main() failed:")
+  logging.error(e)
+  sys.exit(0)
