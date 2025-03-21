@@ -345,8 +345,11 @@ def init():
 
 ############################################################
 #
-# register
+# register 
 #
+
+## 
+
 def register(baseurl):
     """
     Registers a new user 
@@ -386,7 +389,12 @@ def register(baseurl):
         data['lastname'] = lastname
 
     print("calling web service...")
-    response = requests.post(url, json=data)
+    try:
+        response = requests.post(url, json=data)
+    except Exception as e:
+        print(f"**ERROR: Exception during web service call: {str(e)}")
+        logging.error(f"register() request failed: {str(e)}")
+        return None
     
     if response is None:
         print("**ERROR: failed to call web service, no response")
@@ -398,47 +406,120 @@ def register(baseurl):
         try:
             jsonResponse = response.json()
             print(json.dumps(jsonResponse, indent=2))
-        except:
-            print("Response:", response.text)
+        except Exception as e:
+            print(f"Response (not JSON): {response.text}")
+            logging.error(f"Failed to parse error response as JSON: {str(e)}")
         return
     
     try:
-        # The response could be a redirect or JSON
+        # Check content type to determine how to handle response
+        content_type = response.headers.get('Content-Type', '')
+        
+        # The response could be a redirect, JSON, or HTML
         if response.status_code == 302:
             # Handle redirect response
+            print(f"Response status code: {response.status_code}")
             redirect_url = response.headers.get('Location')
-            print(response.text)
+
             print(f"Received redirect to: {redirect_url}")
             print("Opening browser for Spotify authorization...")
-            webbrowser.open(redirect_url)
+            print(f"URL being opened: {redirect_url}")
+            try:
+                # Try to open browser with more detailed error reporting
+                browser_opened = webbrowser.open(redirect_url)
+                if browser_opened:
+                    print("Browser successfully opened")
+                else:
+                    print("WARNING: webbrowser.open() returned False - browser may not have opened")
+                    print("Please manually copy and paste this URL into your browser:")
+                    print(redirect_url)
+            except Exception as e:
+                print(f"ERROR opening browser: {str(e)}")
+                print("Please manually copy and paste this URL into your browser:")
+                print(redirect_url)
             print("\nAfter authorizing in the browser, the system will redirect to your callback URL.")
             print("You'll need to manually check your server logs for the callback processing.")
             return
-        else:
+        elif 'text/html' in content_type:
+            # Handle HTML response (likely a Spotify auth page)
+            print("Received HTML response (likely a Spotify login page)")
+            
+            # Look for Spotify auth URL in the HTML
+            html_content = response.text
+            # Extract potential URLs from the page (simple approach)
+            if 'accounts.scdn.co' in html_content or 'accounts.spotify.com' in html_content:
+                print("Detected Spotify authentication page")
+                print("Opening browser for direct authentication...")
+                print(f"URL being opened: {response.url}")
+                try:
+                    # Try to open browser with more detailed error reporting
+                    browser_opened = webbrowser.open(response.url)
+                    if browser_opened:
+                        print("Browser successfully opened")
+                    else:
+                        print("WARNING: webbrowser.open() returned False - browser may not have opened")
+                        print("Please manually copy and paste this URL into your browser:")
+                        print(response.url)
+                except Exception as e:
+                    print(f"ERROR opening browser: {str(e)}")
+                    print("Please manually copy and paste this URL into your browser:")
+                    print(response.url)
+                print("\nAfter authorizing in the browser, the system will redirect to your callback URL.")
+                print("\nPress Enter after you've completed the Spotify authorization process...")
+                input()
+                return
+            else:
+                print("Received HTML response that doesn't appear to be a Spotify login page")
+                print("First 500 characters of response:")
+                print(html_content[:500] + "...")
+                return
+        elif 'application/json' in content_type:
             # Handle JSON response
             jsonResponse = response.json()
-            print("Web service returned:")
+            print("Web service returned JSON:")
             print(json.dumps(jsonResponse, indent=2))
             
             # Check if response contains a Spotify auth URL to open
             if "spotify_auth_url" in jsonResponse:
                 print("\nOpening browser for Spotify authorization...")
-                webbrowser.open(jsonResponse["spotify_auth_url"])
+                auth_url = jsonResponse["spotify_auth_url"]
+                print(f"URL being opened: {auth_url}")
+                try:
+                    # Try to open browser with more detailed error reporting
+                    browser_opened = webbrowser.open(auth_url)
+                    if browser_opened:
+                        print("Browser successfully opened")
+                    else:
+                        print("WARNING: webbrowser.open() returned False - browser may not have opened")
+                        print("Please manually copy and paste this URL into your browser:")
+                        print(auth_url)
+                except Exception as e:
+                    print(f"ERROR opening browser: {str(e)}")
+                    print("Please manually copy and paste this URL into your browser:")
+                    print(auth_url)
                 print("\nAfter authorizing in the browser, the system will redirect to your callback URL.")
                 print("Registration token:", jsonResponse.get("registration_token", "Not provided"))
                 
                 # Wait for manual confirmation from user
                 print("\nPress Enter after you've completed the Spotify authorization process...")
                 input()
+        else:
+            # Try to parse as JSON first, fall back to treating as text
+            try:
+                jsonResponse = response.json()
+                print("Web service returned:")
+                print(json.dumps(jsonResponse, indent=2))
+            except ValueError:
+                print("Response was not JSON. Response content:")
+                print(response.text[:1000] + "..." if len(response.text) > 1000 else response.text)
                 
-            
     except Exception as e:
-        print("**ERROR: unable to parse response as JSON")
-        print("Response:", response.text)
-        logging.error("register() failed:")
-        logging.error(e)
+        print("**ERROR: unable to process response")
+        print("Response type:", response.headers.get('Content-Type', 'unknown'))
+        print("Response status:", response.status_code)
+        print("First 1000 characters of response:", response.text[:1000] + "..." if len(response.text) > 1000 else response.text)
+        logging.error(f"register() failed to process response: {str(e)}")
         return
-
 
 ############################################################
 #
